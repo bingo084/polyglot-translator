@@ -3,3 +3,28 @@ server:
 spring:
   application:
     name: api-server
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/polyglot
+    username: postgres
+    password: postgres
+jimmer:
+  language: kotlin
+  dialect: org.babyfish.jimmer.sql.dialect.PostgresDialect
+  show-sql: true
+  pretty-sql: true
+  inline-sql-variables: true
+  database-validation-mode: error
+  client:
+    openapi:
+      path: /openapi.yml
+      ui-path: /openapi.html
+      properties:
+        info:
+          title: "Polyglot API Server"
+          description: "多语言翻译 - API 服务"
+          version: 0.0.1
+    ts:
+      path: /ts.zip
+  error-translator:
+    http-status: 400
