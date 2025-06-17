@@ -1,6 +1,7 @@
 plugins { id("com.google.devtools.ksp") version "2.1.21+" }
 
 val jimmerVersion = "0.9.93"
+val idgenerator = "1.0.6"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
@@ -14,6 +15,8 @@ dependencies {
   ksp("org.babyfish.jimmer:jimmer-ksp:$jimmerVersion")
   // Database
   runtimeOnly("org.postgresql:postgresql")
+  // IdGenerator
+  implementation("com.github.yitter:yitter-idgenerator:${idgenerator}")
 }
 
 tasks.withType<Test> { useJUnitPlatform() }
