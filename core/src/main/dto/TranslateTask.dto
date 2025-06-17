@@ -1,0 +1,16 @@
+export com.bingo.polyglot.core.entity.TranslateTask
+
+specification TranslateTaskSpec {
+  status
+  sourceAudio
+  ge(createTime)
+  le(createTime)
+  ge(finishTime)
+  le(finishTime)
+}
+
+input TranslateTaskInput {
+  sourceAudio
+  originalText
+  targetLanguage
+}
