@@ -1,4 +1,4 @@
-package com.bingo.polyglot.apiserver.config
+package com.bingo.polyglot.core.config
 
 import com.github.yitter.contract.IdGeneratorOptions
 import com.github.yitter.idgen.YitIdHelper
