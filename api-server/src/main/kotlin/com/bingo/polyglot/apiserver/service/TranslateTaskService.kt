@@ -52,24 +52,25 @@ class TranslateTaskService(private val sql: KSqlClient) {
   /** Cancel task */
   @DeleteMapping("{id}")
   @Throws(TaskException.TaskNotFound::class, TaskException.CancelFailed::class)
-  fun cancel(@PathVariable("id") id: Long): Boolean {
-    val status =
-      sql
-        .createQuery(TranslateTask::class) {
-          where(table.id eq id)
-          select(table.status)
-        }
-        .fetchOneOrNull()
-        ?: throw TaskException.taskNotFound(message = "Task with id $id not found", taskId = id)
-    if (status !in listOf(TaskStatus.PENDING, TaskStatus.RUNNING)) {
-      val message = "Only PENDING or RUNNING task can be cancelled, current status is $status"
-      throw TaskException.cancelFailed(message = message, reason = message)
+  fun cancel(@PathVariable("id") id: Long): Boolean =
+    sql.transaction {
+      val status =
+        sql
+          .createQuery(TranslateTask::class) {
+            where(table.id eq id)
+            select(table.status)
+          }
+          .fetchOneOrNull()
+          ?: throw TaskException.taskNotFound(message = "Task with id $id not found", taskId = id)
+      if (status !in listOf(TaskStatus.PENDING, TaskStatus.RUNNING)) {
+        val message = "Only PENDING or RUNNING task can be cancelled, current status is $status"
+        throw TaskException.cancelFailed(message = message, reason = message)
+      }
+      sql.executeUpdate(TranslateTask::class) {
+        set(table.status, TaskStatus.CANCELLED)
+        where(table.id eq id)
+      } > 0
     }
-    return sql.executeUpdate(TranslateTask::class) {
-      set(table.status, TaskStatus.CANCELLED)
-      where(table.id eq id)
-    } > 0
-  }
 
   companion object {
     private val TRANSLATE_TASK = newFetcher(TranslateTask::class).by { allScalarFields() }
