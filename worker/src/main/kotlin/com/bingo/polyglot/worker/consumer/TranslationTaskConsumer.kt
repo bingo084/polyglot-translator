@@ -6,6 +6,7 @@ import com.bingo.polyglot.core.dto.CreateTaskMessage
 import com.bingo.polyglot.core.entity.*
 import com.bingo.polyglot.core.exception.TaskException
 import com.bingo.polyglot.core.storage.MinioStorage
+import com.bingo.polyglot.worker.util.WerUtil
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.babyfish.jimmer.sql.kt.fetcher.newFetcher
@@ -68,7 +69,15 @@ class TranslationTaskConsumer(
           where(table.id eq taskId)
         }
 
-        // 3. TODO: Perform accuracy validation
+        // 3. Perform accuracy validation (WER)
+        val originalText = task.originalText
+        if (originalText != null && sttText != null) {
+          val wer = WerUtil.calculate(originalText, sttText)
+          sql.executeUpdate(TranslationTask::class) {
+            set(table.wer, wer)
+            where(table.id eq taskId)
+          }
+        }
 
         // 4. TODO: Call translation API for multilingual translation
 

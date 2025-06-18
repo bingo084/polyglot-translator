@@ -5,6 +5,7 @@ CREATE TABLE translation_task
     source_audio_id BIGINT      NOT NULL REFERENCES audio (id),
     original_text   TEXT,
     stt_text        TEXT,
+    wer             DOUBLE PRECISION,
     target_language jsonb       NOT NULL,
     result_file     BIGINT,
     error_message   TEXT,
@@ -12,6 +13,8 @@ CREATE TABLE translation_task
     update_time     timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finish_time     timestamptz
 );
+
+COMMENT ON COLUMN translation_task.wer IS 'Word Error Rate (WER) for the STT transcription.';
 
 CREATE TABLE audio
 (

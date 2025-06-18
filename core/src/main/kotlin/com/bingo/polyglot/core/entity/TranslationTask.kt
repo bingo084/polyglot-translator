@@ -30,6 +30,9 @@ interface TranslationTask : BaseEntity {
   /** Text obtained from speech-to-text transcription (STT). */
   val sttText: String?
 
+  /** Word Error Rate (WER) for the STT transcription. */
+  val wer: Double?
+
   /** Target languages for translation. */
   @Serialized val targetLanguage: List<Language>
 
