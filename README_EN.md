@@ -37,10 +37,10 @@ polyglot-translator/
 
 ### 🎙️ Whisper Speech Recognition
 
-- [ ] Use Whisper model for speech recognition
-- [ ] Provide HTTP interface
+- [x] Use Whisper model for speech recognition
+- [x] Provide HTTP interface
   via [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice)
-- [ ] Validate recognized text against original content
+- [x] Validate recognized text against original content
 
 ### 🌐 Multilingual Translation
 

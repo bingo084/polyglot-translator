@@ -30,10 +30,10 @@ polyglot-translator/
 
 ### 🎙️ Whisper 语音识别
 
-- [ ] 使用 Whisper 模型进行语音识别
-- [ ] 通过 [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) 提供 HTTP
+- [x] 使用 Whisper 模型进行语音识别
+- [x] 通过 [whisper-asr-webservice](https://github.com/ahmetoner/whisper-asr-webservice) 提供 HTTP
   服务调用
-- [ ] 识别文本会与原始文本进行准确性校验
+- [x] 识别文本会与原始文本进行准确性校验
 
 ### 🌐 多语言翻译
 
