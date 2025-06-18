@@ -7,8 +7,8 @@ import com.bingo.polyglot.core.dto.PageReq
 import com.bingo.polyglot.core.dto.fetchPage
 import com.bingo.polyglot.core.dto.orderBy
 import com.bingo.polyglot.core.entity.*
-import com.bingo.polyglot.core.entity.dto.TranslateTaskInput
-import com.bingo.polyglot.core.entity.dto.TranslateTaskSpec
+import com.bingo.polyglot.core.entity.dto.TranslationTaskInput
+import com.bingo.polyglot.core.entity.dto.TranslationTaskSpec
 import com.bingo.polyglot.core.exception.TaskException
 import com.bingo.polyglot.core.storage.MinioStorage
 import org.babyfish.jimmer.Page
@@ -25,26 +25,26 @@ import org.springframework.web.multipart.MultipartFile
 import java.util.*
 
 /**
- * Translate task
+ * Translation task
  *
  * @author bingo
  */
 @RestController
-@RequestMapping("/translate-tasks")
-class TranslateTaskService(
+@RequestMapping("/translation-tasks")
+class TranslationTaskService(
   private val sql: KSqlClient,
   private val kafka: KafkaTemplate<String, CreateTaskMessage>,
   private val storage: MinioStorage,
 ) {
   /** Find task */
   @GetMapping("{id}")
-  fun findById(@PathVariable("id") id: Long): TranslateTask? = sql.findById(TRANSLATE_TASK, id)
+  fun findById(@PathVariable("id") id: Long): TranslationTask? = sql.findById(TRANSLATE_TASK, id)
 
   /** Find task */
   @GetMapping
-  fun findById(spec: TranslateTaskSpec, page: PageReq): Page<TranslateTask> =
+  fun findById(spec: TranslationTaskSpec, page: PageReq): Page<TranslationTask> =
     sql
-      .createQuery(TranslateTask::class) {
+      .createQuery(TranslationTask::class) {
         where(spec)
         orderBy(page)
         select(table.fetch(TRANSLATE_TASK))
@@ -53,7 +53,7 @@ class TranslateTaskService(
 
   /** Create task */
   @PostMapping
-  fun create(input: TranslateTaskInput): Long {
+  fun create(input: TranslationTaskInput): Long {
     val taskId =
       sql
         .save(input.toEntity { status = TaskStatus.PENDING }) { setMode(SaveMode.INSERT_ONLY) }
@@ -73,7 +73,7 @@ class TranslateTaskService(
           "Failed to send task create message for taskId=$taskId. Marking task as FAILED.",
           ex,
         )
-        sql.executeUpdate(TranslateTask::class) {
+        sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.FAILED)
           where(table.id eq taskId)
         }
@@ -92,7 +92,7 @@ class TranslateTaskService(
     sql.transaction {
       val status =
         sql
-          .createQuery(TranslateTask::class) {
+          .createQuery(TranslationTask::class) {
             where(table.id eq id)
             select(table.status)
           }
@@ -102,7 +102,7 @@ class TranslateTaskService(
         val message = "Only PENDING or RUNNING task can be cancelled, current status is $status"
         throw TaskException.cancelFailed(message = message, reason = message)
       }
-      sql.executeUpdate(TranslateTask::class) {
+      sql.executeUpdate(TranslationTask::class) {
         set(table.status, TaskStatus.CANCELLED)
         where(table.id eq id)
       } > 0
@@ -138,9 +138,9 @@ class TranslateTaskService(
   }
 
   companion object {
-    private val logger: Logger = LoggerFactory.getLogger(TranslateTaskService::class.java)
+    private val logger: Logger = LoggerFactory.getLogger(TranslationTaskService::class.java)
     private val TRANSLATE_TASK =
-      newFetcher(TranslateTask::class).by {
+      newFetcher(TranslationTask::class).by {
         allScalarFields()
         sourceAudio {
           allScalarFields()

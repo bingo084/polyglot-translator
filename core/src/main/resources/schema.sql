@@ -1,4 +1,4 @@
-CREATE TABLE translate_task
+CREATE TABLE translation_task
 (
     id              BIGINT PRIMARY KEY,
     status          TEXT        NOT NULL,

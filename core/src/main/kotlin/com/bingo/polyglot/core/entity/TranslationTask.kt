@@ -17,7 +17,7 @@ import java.time.OffsetDateTime
  * @author bingo
  */
 @Entity
-interface TranslateTask : BaseEntity {
+interface TranslationTask : BaseEntity {
   /** Current status of the task. */
   val status: TaskStatus
 

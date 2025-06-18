@@ -63,7 +63,7 @@ class TranslationTaskConsumer(
               .retrieve()
               .body(String::class.java)
           }
-        sql.executeUpdate(TranslateTask::class) {
+        sql.executeUpdate(TranslationTask::class) {
           set(table.sttText, sttText)
           where(table.id eq taskId)
         }
@@ -73,7 +73,7 @@ class TranslationTaskConsumer(
         // 4. TODO: Call translation API for multilingual translation
 
         // 5. Update task status to SUCCEEDED
-        sql.executeUpdate(TranslateTask::class) {
+        sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.SUCCEEDED)
           set(table.finishTime, OffsetDateTime.now())
           where(table.id eq taskId)
@@ -82,7 +82,7 @@ class TranslationTaskConsumer(
       logger.info("Task $taskId processed successfully, cost $duration")
     } catch (ex: Exception) {
       logger.error("Failed to process task $taskId", ex)
-      sql.executeUpdate(TranslateTask::class) {
+      sql.executeUpdate(TranslationTask::class) {
         set(table.status, TaskStatus.FAILED)
         set(table.errorMessage, ex.message)
         where(table.id eq taskId)
@@ -93,7 +93,7 @@ class TranslationTaskConsumer(
   companion object {
     private val logger: Logger = LoggerFactory.getLogger(TranslationTaskConsumer::class.java)
     private val TRANSLATE_TASK =
-      newFetcher(TranslateTask::class).by {
+      newFetcher(TranslationTask::class).by {
         allScalarFields()
         sourceAudio { allScalarFields() }
       }
