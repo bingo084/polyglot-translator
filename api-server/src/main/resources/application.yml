@@ -33,3 +33,8 @@ jimmer:
       path: /ts.zip
   error-translator:
     http-status: 400
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: polyglot

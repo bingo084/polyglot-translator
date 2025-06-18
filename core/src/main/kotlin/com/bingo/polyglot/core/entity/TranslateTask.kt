@@ -3,6 +3,7 @@ package com.bingo.polyglot.core.entity
 import com.bingo.polyglot.core.constants.Language
 import com.bingo.polyglot.core.constants.TaskStatus
 import org.babyfish.jimmer.sql.Entity
+import org.babyfish.jimmer.sql.ManyToOne
 import org.babyfish.jimmer.sql.Serialized
 import java.time.OffsetDateTime
 
@@ -21,7 +22,7 @@ interface TranslateTask : BaseEntity {
   val status: TaskStatus
 
   /** ID of the source audio file to be translated. */
-  val sourceAudio: Long
+  @ManyToOne val sourceAudio: Audio
 
   /** Optional manually provided original text. */
   val originalText: String?

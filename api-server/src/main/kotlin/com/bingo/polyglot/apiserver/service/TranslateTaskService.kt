@@ -6,13 +6,11 @@ import com.bingo.polyglot.core.dto.CreateTaskMessage
 import com.bingo.polyglot.core.dto.PageReq
 import com.bingo.polyglot.core.dto.fetchPage
 import com.bingo.polyglot.core.dto.orderBy
-import com.bingo.polyglot.core.entity.TranslateTask
-import com.bingo.polyglot.core.entity.by
+import com.bingo.polyglot.core.entity.*
 import com.bingo.polyglot.core.entity.dto.TranslateTaskInput
 import com.bingo.polyglot.core.entity.dto.TranslateTaskSpec
-import com.bingo.polyglot.core.entity.id
-import com.bingo.polyglot.core.entity.status
 import com.bingo.polyglot.core.exception.TaskException
+import com.bingo.polyglot.core.storage.MinioStorage
 import org.babyfish.jimmer.Page
 import org.babyfish.jimmer.sql.ast.mutation.SaveMode
 import org.babyfish.jimmer.sql.kt.KSqlClient
@@ -20,8 +18,11 @@ import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.babyfish.jimmer.sql.kt.fetcher.newFetcher
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.springframework.http.MediaType
 import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
+import java.util.*
 
 /**
  * Translate task
@@ -33,6 +34,7 @@ import org.springframework.web.bind.annotation.*
 class TranslateTaskService(
   private val sql: KSqlClient,
   private val kafka: KafkaTemplate<String, CreateTaskMessage>,
+  private val storage: MinioStorage,
 ) {
   /** Find task */
   @GetMapping("{id}")
@@ -106,8 +108,44 @@ class TranslateTaskService(
       } > 0
     }
 
+  /** Upload audio file */
+  @PostMapping("upload-audio")
+  fun uploadAudio(@RequestParam file: MultipartFile): Long {
+    val extension = file.originalFilename?.substringAfterLast(".") ?: ""
+    val path = "audio/${UUID.randomUUID()}.$extension"
+    val contentType = file.contentType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
+    if (!contentType.startsWith("audio/")) {
+      val message = "Invalid content type: $contentType. Expected audio/*"
+      throw TaskException.invalidContentType(message = message, reason = message)
+    }
+    val audioId =
+      sql
+        .save(
+          Audio {
+            name = file.originalFilename ?: path.substringAfter("/")
+            this.path = path
+            size = file.size
+            this.extension = extension
+            this.contentType = contentType
+          }
+        ) {
+          setMode(SaveMode.INSERT_ONLY)
+        }
+        .modifiedEntity
+        .id
+    storage.putObject(file.inputStream, path, file.size, contentType)
+    return audioId
+  }
+
   companion object {
     private val logger: Logger = LoggerFactory.getLogger(TranslateTaskService::class.java)
-    private val TRANSLATE_TASK = newFetcher(TranslateTask::class).by { allScalarFields() }
+    private val TRANSLATE_TASK =
+      newFetcher(TranslateTask::class).by {
+        allScalarFields()
+        sourceAudio {
+          allScalarFields()
+          url()
+        }
+      }
   }
 }
