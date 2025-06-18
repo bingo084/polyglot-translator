@@ -15,7 +15,7 @@ dependencies {
   // IdGenerator
   implementation("com.github.yitter:yitter-idgenerator:${idgenerator}")
   // MinIO
-  implementation("io.minio:minio:${minioVersion}")
+  api("io.minio:minio:${minioVersion}")
 }
 
 tasks.withType<Test> { useJUnitPlatform() }

@@ -41,6 +41,17 @@ services:
     volumes:
       - minio-data:/data
     command: minio server /data --console-address ":9001"
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:v1.8.2-gpu
+    restart: always
+    environment:
+      ASR_MODEL: base
+      ASR_ENGINE: openai_whisper
+    ports:
+      - "9003:9000"
+    volumes:
+      - whisper-cache:/root/.cache
 volumes:
   postgres-data:
   minio-data:
+  whisper-cache:

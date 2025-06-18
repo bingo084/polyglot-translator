@@ -42,3 +42,5 @@ minio:
   access-key: minioadmin
   secret-key: minioadmin
   bucket: polyglot
+whisper:
+  base-url: http://localhost:9003
