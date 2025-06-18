@@ -17,6 +17,8 @@ dependencies {
   runtimeOnly("org.postgresql:postgresql")
   // IdGenerator
   implementation("com.github.yitter:yitter-idgenerator:${idgenerator}")
+  // Kafka
+  implementation("org.springframework.kafka:spring-kafka")
 }
 
 tasks.withType<Test> { useJUnitPlatform() }
