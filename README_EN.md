@@ -58,6 +58,99 @@ polyglot-translator/
 - [x] Monitor memory usage to avoid OOM during task processing
 - [x] Support task cancellation, retries, failover — ensuring tasks aren't lost
 
+### 🗺️ Workflow Diagram
+
+```mermaid
+flowchart TD
+    user[User]
+    api[API Server]
+    kafka[Kafka Topic]
+    workers[Multiple Worker Instances]
+    whisper[Whisper STT Service]
+    translator[LLM Translation Service]
+    minio[MinIO Storage]
+    db[(PostgreSQL Database)]
+    user -->|Upload audio and create task| api
+    api -->|Save task data| db
+    api -->|Upload audio| minio
+    api -->|Publish task message CreateTaskMessage| kafka
+    kafka -->|Consume task messages| workers
+    workers -->|Download audio| minio
+    workers -->|Call Whisper| whisper
+    whisper -->|Return STT text| workers
+    workers -->|Call translation| translator
+    translator -->|Return translated text| workers
+    workers -->|Package and generate . pack file| workers
+    workers -->|Upload . pack file| minio
+    workers -->|Update task status| db
+    user -->|Query task status or download result| api
+    api -->|Query task status| db
+    api -->|Download . pack file| minio
+```
+
+This system uses Kafka to implement asynchronous task scheduling and supports multiple stateless
+worker instances consuming tasks concurrently, enabling high concurrency processing. The workflow is
+as follows:
+
+1. The user uploads audio, and the API Server stores the audio and task metadata.
+2. The API Server publishes the task message to Kafka.
+3. Multiple worker instances consume tasks concurrently and download the audio files.
+4. Workers call Whisper to perform speech-to-text, then call LLM to translate into multiple
+   languages.
+5. Workers package all translation results into a .pack file and upload it to MinIO.
+6. Workers update the task status in the database, completing the task lifecycle.
+7. Users can query task status and download translation results via the API.
+
+This design ensures high availability, scalability, and supports fast querying and accuracy
+verification.
+
+### 📦 Packaging Design
+
+The .pack file is a unified compressed package containing all multilingual results of a single
+translation task. It supports fast querying based on language, segment index, and content source (
+text or audio), enabling efficient access to translation data.
+
+#### 🚩 Key Features
+
+- 🌐 Multi-language support: The file is organized by language codes (e.g., EN, ZH, JA).
+- 🔢 Segment indexing: Each language is indexed by audio segment ID (e.g., 0, 1, 2), with each
+  segment
+  containing corresponding text and optional audio snippet.
+- 📦 Compressed storage: The entire file uses compression (e.g., Gzip) to save storage space and
+  improve transfer efficiency.
+- ⚡ Fast querying: Quickly locate text or audio content by specifying language and segment index.
+- 🔄 Unified format: Ensures downstream services or clients can consistently parse and utilize the
+  translation data.
+
+#### 📄 Example structure (after decompression, in JSON format):
+
+```json
+{
+  "EN": {
+    "0": {
+      "TEXT": "Hello",
+      "AUDIO": "Audio snippet for Hello"
+    },
+    "1": {
+      "TEXT": "Goodbye",
+      "AUDIO": "Audio snippet for Goodbye"
+    }
+  },
+  "ZH": {
+    "0": {
+      "TEXT": "你好",
+      "AUDIO": "对应的音频片段"
+    }
+  },
+  "JA": {
+    "0": {
+      "TEXT": "こんにちは",
+      "AUDIO": "対応する音声スニペット"
+    }
+  }
+}
+```
+
 ---
 
 ## 🚀 Getting Started
@@ -77,14 +170,18 @@ polyglot-translator/
 
 ### Start the API Server
 
+> **Note：** Please ensure the environment variable **WORKER_ID** is set (used for Snowflake ID
+> generation, and all instances must be unique), otherwise the service will not work properly.
+
 ```bash
 ./gradlew :api-server:bootRun
 ```
 
 ### Start the Worker
 
-> **Note:** Make sure the OpenAI / Gemini API Key is configured in environment variables, or the
-> service won't function properly.
+> **Note:** Please ensure the environment variables include the **Gemini API Key** and **WORKER_ID
+** (used for Snowflake ID generation, and all instances must be unique), otherwise the service
+> will not work properly.
 
 ```bash
 ./gradlew :worker:bootRun

@@ -51,6 +51,89 @@ polyglot-translator/
 - [x] 监控内存使用，消费任务时会检查当前节点内存，避免 OOM
 - [x] 支持任务取消、失败重试、故障转移，不丢失任务
 
+### 🗺️ 流程图
+
+```mermaid
+flowchart TD
+    user[用户]
+    api[API Server]
+    kafka[Kafka Topic]
+    workers[多个 Worker 实例]
+    whisper[Whisper STT 服务]
+    translator[LLM 翻译服务]
+    minio[MinIO 存储]
+    db[(PostgreSQL 数据库)]
+    user -->|上传音频和创建任务| api
+    api -->|保存任务数据| db
+    api -->|上传音频| minio
+    api -->|发布任务消息 CreateTaskMessage| kafka
+    kafka -->|任务消息消费| workers
+    workers -->|下载音频| minio
+    workers -->|调用 Whisper| whisper
+    whisper -->|返回 STT 文本| workers
+    workers -->|调用翻译| translator
+    translator -->|返回翻译文本| workers
+    workers -->|打包生成 . pack 文件| workers
+    workers -->|上传 . pack 文件| minio
+    workers -->|更新任务状态| db
+    user -->|查询任务状态或下载结果| api
+    api -->|查询任务状态| db
+    api -->|下载 . pack 文件| minio
+```
+
+本系统通过 Kafka 实现任务异步调度，支持多个无状态 Worker 实例并行消费任务，实现高并发处理。流程如下：
+
+1. 用户上传音频，API Server 存储音频和任务元信息。
+2. API Server 发布任务消息到 Kafka。
+3. 多个 Worker 实例并行消费任务，下载音频文件。
+4. Worker 调用 Whisper 完成语音转文本，再调用 LLM 翻译成多语言文本。
+5. Worker 将所有翻译结果打包成 .pack 文件，上传到 MinIO。
+6. Worker 更新数据库任务状态，完成任务生命周期。
+7. 用户可通过 API 查询任务状态，下载翻译结果。
+
+此设计保证系统高可用、高扩展，且支持快速查询和准确性校验。
+
+### 📦 打包设计
+
+.pack 文件是对单个翻译任务所有多语言结果的统一压缩打包文件，支持根据语言、文本编号和内容来源（文本或音频）快速查询，方便高效地访问翻译数据。
+
+#### 🚩 主要特点
+
+- 🌐 多语言支持：文件按语言代码组织（如 EN、ZH、JA 等）。
+- 🔢 分段索引：每种语言下按音频 ID 索引（如 0、1、2），每段包含对应文本和可选音频片段。
+- 📦 压缩存储：整体文件采用压缩格式（如 Gzip），节省存储空间并提升传输效率。
+- ⚡ 快速查询：根据语言和文本编号能迅速定位对应的文本或音频内容。
+- 🔄 格式统一：保证下游服务或客户端能统一解析和使用翻译数据。
+
+#### 📄 示例结构（解压后的 JSON 格式）：
+
+```json
+{
+  "EN": {
+    "0": {
+      "TEXT": "Hello",
+      "AUDIO": "Audio snippet for Hello"
+    },
+    "1": {
+      "TEXT": "Goodbye",
+      "AUDIO": "Audio snippet for Goodbye"
+    }
+  },
+  "ZH": {
+    "0": {
+      "TEXT": "你好",
+      "AUDIO": "对应的音频片段"
+    }
+  },
+  "JA": {
+    "0": {
+      "TEXT": "こんにちは",
+      "AUDIO": "対応する音声スニペット"
+    }
+  }
+}
+```
+
 ---
 
 ## 🚀 快速开始
@@ -70,13 +153,16 @@ polyglot-translator/
 
 ### 启动 api-server 服务
 
+> **注意：** 请确保环境变量中配置了 **WORKER_ID**（用于雪花 id 生成，所有实例不能相同），否则服务无法正常工作。
+
 ```bash
 ./gradlew :api-server:bootRun
 ```
 
 ### 启动 worker 服务
 
-> **注意：** 请确保环境变量中配置了 OpenAI / Gemini API Key，否则服务无法正常工作。
+> **注意：** 请确保环境变量中配置了 **Gemini API Key** 和 **WORKER_ID**（用于雪花 id
+> 生成，所有实例不能相同），否则服务无法正常工作。
 
 ```bash
 ./gradlew :worker:bootRun
