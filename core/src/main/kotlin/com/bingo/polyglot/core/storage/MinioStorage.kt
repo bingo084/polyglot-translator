@@ -41,7 +41,7 @@ class MinioStorage(
   companion object {
     fun getUrl(objectName: String): String {
       val minioProperties = SpringContextHolder.getBean(MinioProperties::class.java)
-      return minioProperties.endpoint + "/" + minioProperties.bucket + "/" + objectName
+      return minioProperties.publicUrl + "/" + minioProperties.bucket + "/" + objectName
     }
   }
 }

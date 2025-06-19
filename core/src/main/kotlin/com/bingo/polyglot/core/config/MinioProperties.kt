@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Configuration
 @Configuration
 @ConfigurationProperties(prefix = "minio")
 open class MinioProperties {
+  lateinit var publicUrl: String
   lateinit var endpoint: String
   lateinit var accessKey: String
   lateinit var secretKey: String

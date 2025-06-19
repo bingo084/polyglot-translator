@@ -31,6 +31,7 @@ jimmer:
   error-translator:
     http-status: 400
 minio:
+  public-url: http://localhost:9000
   endpoint: http://localhost:9000
   access-key: minioadmin
   secret-key: minioadmin
