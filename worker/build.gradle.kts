@@ -2,6 +2,7 @@ plugins { id("com.google.devtools.ksp") version "2.1.21+" }
 
 val jimmerVersion = "0.9.93"
 val langChain4jVersion = "1.1.0"
+val oshiVersion = "6.8.2"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
@@ -22,6 +23,8 @@ dependencies {
   implementation(platform("dev.langchain4j:langchain4j-bom:$langChain4jVersion"))
   implementation("dev.langchain4j:langchain4j")
   implementation("dev.langchain4j:langchain4j-google-ai-gemini")
+  // OSHI - Native Operating System and Hardware Information
+  implementation("com.github.oshi:oshi-core:$oshiVersion")
 }
 
 tasks.withType<Test> { useJUnitPlatform() }

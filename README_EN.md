@@ -55,7 +55,7 @@ polyglot-translator/
 ### 🧩 Background Task Scheduling
 
 - [x] Workers are stateless and support horizontal scaling
-- [ ] Monitor memory usage and system load to avoid OOM during task processing
+- [x] Monitor memory usage to avoid OOM during task processing
 - [x] Support task cancellation, retries, failover — ensuring tasks aren't lost
 
 ---

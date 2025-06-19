@@ -7,6 +7,7 @@ import com.bingo.polyglot.core.entity.*
 import com.bingo.polyglot.core.exception.TaskException
 import com.bingo.polyglot.core.storage.MinioStorage
 import com.bingo.polyglot.worker.config.Translator
+import com.bingo.polyglot.worker.util.KafkaControl
 import com.bingo.polyglot.worker.util.WerUtil
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
@@ -19,8 +20,10 @@ import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.kafka.annotation.KafkaListener
 import org.springframework.kafka.core.KafkaTemplate
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
+import oshi.SystemInfo
 import java.time.OffsetDateTime
 import kotlin.time.measureTime
 
@@ -31,15 +34,28 @@ class TranslationTaskConsumer(
   private val whisperApi: RestClient,
   private val translator: Translator,
   private val kafka: KafkaTemplate<String, CreateTaskMessage>,
+  private val kafkaControl: KafkaControl,
 ) {
 
-  @KafkaListener(topics = [KafkaTopics.TRANSLATION_TASK_CREATE])
+  @KafkaListener(
+    id = KafkaTopics.TRANSLATION_TASK_CREATE,
+    topics = [KafkaTopics.TRANSLATION_TASK_CREATE],
+  )
   fun listenCreateTask(message: CreateTaskMessage) {
-    // TODO: Check current node's memory and CPU load before processing.
     val taskId = message.taskId
     val logPrefix = "[TranslationTask:$taskId]"
+    // 1. Check current node's memory load before processing.
+    val ratio = memoryUsageRatio()
+    if (ratio > 0.9) {
+      logger.warn(
+        "$logPrefix Memory usage ratio is too high: ${"%.2f".format(ratio * 100)}%, skipping task processing"
+      )
+      kafkaControl.pause(KafkaTopics.TRANSLATION_TASK_CREATE)
+      sendMqMessage(taskId)
+      return
+    }
     logger.info("$logPrefix Received translation task create message")
-    // 1. Load task details from the database
+    // 2. Load task details from the database
     val task =
       sql.findById(TRANSLATE_TASK, taskId)
         ?: throw TaskException.taskNotFound(message = "Task $taskId not found", taskId = taskId)
@@ -57,7 +73,7 @@ class TranslationTaskConsumer(
         }
         logger.info("$logPrefix Change translation task status to RUNNING")
         checkCanceled(taskId)
-        // 2. Call Whisper service for speech recognition
+        // 3. Call Whisper service for speech recognition
         logger.info("$logPrefix Start calling Whisper service")
         val sttText =
           minioStorage.getObject(task.sourceAudio.path).use { response ->
@@ -84,7 +100,7 @@ class TranslationTaskConsumer(
         val originalText = task.originalText
         if (originalText != null && sttText != null) {
           checkCanceled(taskId)
-          // 3. Perform accuracy validation (WER)
+          // 4. Perform accuracy validation (WER)
           logger.info("$logPrefix Start calculating WER")
           val wer = WerUtil.calculate(originalText, sttText)
           sql.executeUpdate(TranslationTask::class) {
@@ -94,7 +110,7 @@ class TranslationTaskConsumer(
           logger.info("$logPrefix Saved WER = $wer")
 
           checkCanceled(taskId)
-          // 4. Call translation API for multilingual translation
+          // 5. Call translation API for multilingual translation
           logger.info("$logPrefix Start calling translation service")
           val originalTranslations = translator.translate(originalText, task.targetLanguage)
           val sttTranslations = translator.translate(sttText, task.targetLanguage)
@@ -107,7 +123,7 @@ class TranslationTaskConsumer(
           logger.info("$logPrefix Saved translations")
         }
 
-        // 5. Update task status to SUCCEEDED
+        // 6. Update task status to SUCCEEDED
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.SUCCEEDED)
           set(table.errorMessage, null)
@@ -141,7 +157,22 @@ class TranslationTaskConsumer(
     }
   }
 
-  fun checkCanceled(taskId: Long) {
+  @Scheduled(fixedDelay = 30_000)
+  fun monitorMemoryAndControlKafkaListener() {
+    if (memoryUsageRatio() > 0.85) {
+      kafkaControl.pause(KafkaTopics.TRANSLATION_TASK_CREATE)
+      logger.warn(
+        "Memory usage is high: ${"%.2f".format(memoryUsageRatio() * 100)}%, paused Kafka listener"
+      )
+    } else {
+      kafkaControl.resume(KafkaTopics.TRANSLATION_TASK_CREATE)
+      logger.info(
+        "Memory back to normal: ${"%.2f".format(memoryUsageRatio() * 100)}%, resumed Kafka listener"
+      )
+    }
+  }
+
+  private fun checkCanceled(taskId: Long) {
     val status =
       sql
         .createQuery(TranslationTask::class) {
@@ -161,16 +192,34 @@ class TranslationTaskConsumer(
       result,
       ex ->
       if (ex != null) {
-        logger.error("[TranslationTask:$taskId] Retrying task failed", ex)
+        logger.error(
+          "[TranslationTask:$taskId] Failed to send task create message. Marking task as FAILED.",
+          ex,
+        )
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.FAILED)
           set(table.errorMessage, ex.message)
           where(table.id eq taskId)
         }
       } else {
-        logger.info("[TranslationTask:$taskId] Retrying task message send successfully")
+        logger.info(
+          "[TranslationTask:$taskId] Successfully sent task create message, topic=${result.recordMetadata.topic()}, partition=${result.recordMetadata.partition()}, offset=${result.recordMetadata.offset()}"
+        )
       }
     }
+  }
+
+  /**
+   * Get the memory usage ratio of the current node.
+   *
+   * Powered by oshi library.
+   *
+   * @return Memory usage ratio as a double value between 0.0 and 1.0
+   */
+  private fun memoryUsageRatio(): Double {
+    val memory = SystemInfo().hardware.memory
+    val used = memory.total - memory.available
+    return used.toDouble() / memory.total
   }
 
   companion object {
