@@ -203,6 +203,13 @@ translation service.
 docker compose up -d
 ```
 
+### 📘 API Documentation
+
+Once the system is running, you can access the API documentation at:
+
+- Swagger UI: http://localhost:8081/openapi.html
+- OpenAPI YAML: http://localhost:8081/openapi.yml
+
 ---
 
 ## 🧪 Testing

@@ -185,6 +185,13 @@ flowchart TD
 docker compose up -d
 ```
 
+### 📘 接口文档
+
+系统启动后，可通过以下方式访问 API 文档：
+
+- Swagger UI: http://localhost:8081/openapi.html
+- OpenAPI YAML: http://localhost:8081/openapi.yml
+
 ---
 
 ## 🧪 测试
