@@ -14,8 +14,8 @@ enum class TaskStatus {
   /** The task is currently in progress. */
   RUNNING,
 
-  /** The task was cancelled before completion. */
-  CANCELLED,
+  /** The task was canceled before completion. */
+  CANCELED,
 
   /** The task has finished execution but ended with an error. */
   FAILED,

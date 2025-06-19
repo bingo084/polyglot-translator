@@ -20,9 +20,6 @@ spring:
 jimmer:
   language: kotlin
   dialect: org.babyfish.jimmer.sql.dialect.PostgresDialect
-  show-sql: true
-  pretty-sql: true
-  inline-sql-variables: true
   database-validation-mode: error
   client:
     openapi:

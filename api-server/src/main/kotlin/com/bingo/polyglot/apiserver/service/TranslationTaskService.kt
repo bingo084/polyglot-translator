@@ -99,11 +99,11 @@ class TranslationTaskService(
           .fetchOneOrNull()
           ?: throw TaskException.taskNotFound(message = "Task with id $id not found", taskId = id)
       if (status !in listOf(TaskStatus.PENDING, TaskStatus.RUNNING)) {
-        val message = "Only PENDING or RUNNING task can be cancelled, current status is $status"
+        val message = "Only PENDING or RUNNING task can be canceled, current status is $status"
         throw TaskException.cancelFailed(message = message, reason = message)
       }
       sql.executeUpdate(TranslationTask::class) {
-        set(table.status, TaskStatus.CANCELLED)
+        set(table.status, TaskStatus.CANCELED)
         where(table.id eq id)
       } > 0
     }

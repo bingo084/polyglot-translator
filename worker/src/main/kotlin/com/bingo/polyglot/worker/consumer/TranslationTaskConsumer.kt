@@ -34,23 +34,29 @@ class TranslationTaskConsumer(
   fun listenCreateTask(message: CreateTaskMessage) {
     // TODO: Check current node's memory and CPU load before processing.
     val taskId = message.taskId
-    logger.info("Received translation task create message, taskId=$taskId")
+    val logPrefix = "[TranslationTask:$taskId]"
+    logger.info("$logPrefix Received translation task create message")
 
     try {
       val duration = measureTime {
         // 1. Load task details from the database
         val task =
           sql.findById(TRANSLATE_TASK, taskId)
-            ?: throw TaskException.taskNotFound(
-              message = "Task with id $taskId not found",
-              taskId = taskId,
-            )
+            ?: throw TaskException.taskNotFound(message = "Task $taskId not found", taskId = taskId)
         if (task.status != TaskStatus.PENDING) {
-          logger.warn("Skip processing task $taskId because status is ${task.status}")
+          logger.warn("$logPrefix Skip processing task because status is ${task.status}")
           return
         }
+        checkCanceled(taskId)
+        sql.executeUpdate(TranslationTask::class) {
+          set(table.status, TaskStatus.RUNNING)
+          where(table.id eq taskId)
+        }
+        logger.info("$logPrefix Change translation task status to RUNNING")
 
+        checkCanceled(taskId)
         // 2. Call Whisper service for speech recognition
+        logger.info("$logPrefix Start calling Whisper service")
         val sttText =
           minioStorage.getObject(task.sourceAudio.path).use { response ->
             val builder = MultipartBodyBuilder()
@@ -66,28 +72,37 @@ class TranslationTaskConsumer(
               .retrieve()
               .body(String::class.java)
           }
+        logger.info("$logPrefix Finished calling Whisper service")
         sql.executeUpdate(TranslationTask::class) {
           set(table.sttText, sttText)
           where(table.id eq taskId)
         }
+        logger.info("$logPrefix Saved STT text")
 
         val originalText = task.originalText
         if (originalText != null && sttText != null) {
+          checkCanceled(taskId)
           // 3. Perform accuracy validation (WER)
+          logger.info("$logPrefix Start calculating WER")
           val wer = WerUtil.calculate(originalText, sttText)
           sql.executeUpdate(TranslationTask::class) {
             set(table.wer, wer)
             where(table.id eq taskId)
           }
+          logger.info("$logPrefix Saved WER = $wer")
 
+          checkCanceled(taskId)
           // 4. Call translation API for multilingual translation
+          logger.info("$logPrefix Start calling translation service")
           val originalTranslations = translator.translate(originalText, task.targetLanguage)
           val sttTranslations = translator.translate(sttText, task.targetLanguage)
+          logger.info("$logPrefix Finished calling translation service")
           sql.executeUpdate(TranslationTask::class) {
             set(table.originalTranslations, originalTranslations)
             set(table.sttTranslations, sttTranslations)
             where(table.id eq taskId)
           }
+          logger.info("$logPrefix Saved translations")
         }
 
         // 5. Update task status to SUCCEEDED
@@ -97,14 +112,31 @@ class TranslationTaskConsumer(
           where(table.id eq taskId)
         }
       }
-      logger.info("Task $taskId processed successfully, cost $duration")
+      logger.info("$logPrefix Task processed successfully, cost $duration")
+    } catch (ex: TaskException.Canceled) {
+      logger.error(ex.message, ex)
     } catch (ex: Exception) {
-      logger.error("Failed to process task $taskId", ex)
+      logger.error("$logPrefix Failed to process task", ex)
       sql.executeUpdate(TranslationTask::class) {
         set(table.status, TaskStatus.FAILED)
         set(table.errorMessage, ex.message)
         where(table.id eq taskId)
       }
+    }
+  }
+
+  fun checkCanceled(taskId: Long) {
+    val status =
+      sql
+        .createQuery(TranslationTask::class) {
+          where(table.id eq taskId)
+          select(table.status)
+        }
+        .fetchOneOrNull()
+    if (status == TaskStatus.CANCELED) {
+      throw TaskException.canceled(
+        "[TranslationTask:$taskId] Task is canceled, terminating processing"
+      )
     }
   }
 

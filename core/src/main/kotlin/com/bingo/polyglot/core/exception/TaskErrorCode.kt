@@ -15,4 +15,5 @@ enum class TaskErrorCode {
   @ErrorField(name = "taskId", type = Long::class) TASK_NOT_FOUND,
   @ErrorField(name = "reason", type = String::class) CANCEL_FAILED,
   @ErrorField(name = "reason", type = String::class) INVALID_CONTENT_TYPE,
+  CANCELED,
 }
