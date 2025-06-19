@@ -138,34 +138,51 @@ flowchart TD
 
 ## 🚀 快速开始
 
-### 环境准备
+### 🧱 环境准备
 
 - Java 21+
 - Kotlin 2.1+
-- Docker、Docker Compose
-- OpenAI / Gemini API Key
+- Docker、Docker Compose、Docker BuilderX
+- Gemini API Key
 
-### 构建项目
+### ⚙️ 构建项目
 
 ```bash
-./gradlew clean build
+./gradlew clean build -x test
 ```
 
-### 启动 api-server 服务
+### 🔑 设置环境变量
 
-> **注意：** 请确保环境变量中配置了 **WORKER_ID**（用于雪花 id 生成，所有实例不能相同），否则服务无法正常工作。
+在 docker-compose.yml 中设置环境变量 GEMINI_API_KEY：用于调用 LLM 翻译服务
 
-```bash
-./gradlew :api-server:bootRun
+```yaml
+  worker:
+    build:
+      context: ./worker
+    image: polyglot/worker:latest
+    restart: always
+    environment:
+      # Each instance's WORKER_ID should be unique, used for Snowflake ID generation.
+      WORKER_ID: 1
+      # Replace with your actual Gemini API key.
+      GEMINI_API_KEY: your_gemini_api_key_here
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/polyglot
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: broker:9092
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    depends_on:
+      - db
+      - broker
+      - minio
+      - whisper
 ```
 
-### 启动 worker 服务
-
-> **注意：** 请确保环境变量中配置了 **Gemini API Key** 和 **WORKER_ID**（用于雪花 id
-> 生成，所有实例不能相同），否则服务无法正常工作。
+### 🐳 启动服务
 
 ```bash
-./gradlew :worker:bootRun
+docker compose up -d
 ```
 
 ---

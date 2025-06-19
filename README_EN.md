@@ -159,32 +159,48 @@ text or audio), enabling efficient access to translation data.
 
 - Java 21+
 - Kotlin 2.1+
-- Docker, Docker Compose
-- OpenAI / Gemini API Key
+- Docker、Docker Compose、Docker BuilderX
+- Gemini API Key
 
 ### Build the Project
 
 ```bash
-./gradlew clean build
+./gradlew clean build -x test
 ````
 
-### Start the API Server
+### 🔑 Set Environment Variables
 
-> **Note：** Please ensure the environment variable **WORKER_ID** is set (used for Snowflake ID
-> generation, and all instances must be unique), otherwise the service will not work properly.
+Set the GEMINI_API_KEY environment variable in docker-compose.yml. It is required to call the LLM
+translation service.
 
-```bash
-./gradlew :api-server:bootRun
+```yaml
+  worker:
+    build:
+      context: ./worker
+    image: polyglot/worker:latest
+    restart: always
+    environment:
+      # Each instance's WORKER_ID should be unique, used for Snowflake ID generation.
+      WORKER_ID: 1
+      # Replace with your actual Gemini API key.
+      GEMINI_API_KEY: your_gemini_api_key_here
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/polyglot
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      KAFKA_BOOTSTRAP_SERVERS: broker:9092
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    depends_on:
+      - db
+      - broker
+      - minio
+      - whisper
 ```
 
-### Start the Worker
-
-> **Note:** Please ensure the environment variables include the **Gemini API Key** and **WORKER_ID
-** (used for Snowflake ID generation, and all instances must be unique), otherwise the service
-> will not work properly.
+### Start the Services
 
 ```bash
-./gradlew :worker:bootRun
+docker compose up -d
 ```
 
 ---
