@@ -36,6 +36,12 @@ interface TranslationTask : BaseEntity {
   /** Target languages for translation. */
   @Serialized val targetLanguage: List<Language>
 
+  /** Translations of original text. */
+  @Serialized val originalTranslations: List<Translation>
+
+  /** Translations of STT text. */
+  @Serialized val sttTranslations: List<Translation>
+
   /** ID of the resulting translated file, if available. */
   val resultFile: Long?
 
@@ -45,3 +51,5 @@ interface TranslationTask : BaseEntity {
   /** Timestamp indicating when the task was completed. */
   val finishTime: OffsetDateTime?
 }
+
+data class Translation(val language: Language, val text: String)

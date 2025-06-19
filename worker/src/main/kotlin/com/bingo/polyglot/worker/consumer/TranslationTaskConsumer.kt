@@ -6,6 +6,7 @@ import com.bingo.polyglot.core.dto.CreateTaskMessage
 import com.bingo.polyglot.core.entity.*
 import com.bingo.polyglot.core.exception.TaskException
 import com.bingo.polyglot.core.storage.MinioStorage
+import com.bingo.polyglot.worker.config.Translator
 import com.bingo.polyglot.worker.util.WerUtil
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
@@ -26,6 +27,7 @@ class TranslationTaskConsumer(
   private val sql: KSqlClient,
   private val minioStorage: MinioStorage,
   private val whisperApi: RestClient,
+  private val translator: Translator,
 ) {
 
   @KafkaListener(topics = [KafkaTopics.TRANSLATION_TASK_CREATE])
@@ -69,17 +71,24 @@ class TranslationTaskConsumer(
           where(table.id eq taskId)
         }
 
-        // 3. Perform accuracy validation (WER)
         val originalText = task.originalText
         if (originalText != null && sttText != null) {
+          // 3. Perform accuracy validation (WER)
           val wer = WerUtil.calculate(originalText, sttText)
           sql.executeUpdate(TranslationTask::class) {
             set(table.wer, wer)
             where(table.id eq taskId)
           }
-        }
 
-        // 4. TODO: Call translation API for multilingual translation
+          // 4. Call translation API for multilingual translation
+          val originalTranslations = translator.translate(originalText, task.targetLanguage)
+          val sttTranslations = translator.translate(sttText, task.targetLanguage)
+          sql.executeUpdate(TranslationTask::class) {
+            set(table.originalTranslations, originalTranslations)
+            set(table.sttTranslations, sttTranslations)
+            where(table.id eq taskId)
+          }
+        }
 
         // 5. Update task status to SUCCEEDED
         sql.executeUpdate(TranslationTask::class) {

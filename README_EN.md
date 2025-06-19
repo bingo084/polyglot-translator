@@ -44,8 +44,8 @@ polyglot-translator/
 
 ### 🌐 Multilingual Translation
 
-- [ ] Supports English, Simplified Chinese, Traditional Chinese, Japanese, etc.
-- [ ] Translation powered by LLMs (e.g., OpenAI, Gemini)
+- [x] Supports English, Simplified Chinese, Traditional Chinese, Japanese, etc.
+- [x] Translation powered by LLMs (e.g., OpenAI, Gemini)
 
 ### 📦 Encoding & Packaging
 

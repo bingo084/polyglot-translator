@@ -37,8 +37,8 @@ polyglot-translator/
 
 ### 🌐 多语言翻译
 
-- [ ] 支持英文、简体中文、繁体中文、日语等
-- [ ] 使用 LLM （如 OpenAI、Gemini）进行翻译
+- [x] 支持英文、简体中文、繁体中文、日语等
+- [x] 使用 LLM （如 OpenAI、Gemini）进行翻译
 
 ### 📦 编码与打包
 

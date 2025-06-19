@@ -1,6 +1,7 @@
 plugins { id("com.google.devtools.ksp") version "2.1.21+" }
 
 val jimmerVersion = "0.9.93"
+val langChain4jVersion = "1.1.0"
 
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
@@ -17,6 +18,10 @@ dependencies {
   runtimeOnly("org.postgresql:postgresql")
   // Kafka
   implementation("org.springframework.kafka:spring-kafka")
+  // LangChain4j
+  implementation(platform("dev.langchain4j:langchain4j-bom:$langChain4jVersion"))
+  implementation("dev.langchain4j:langchain4j")
+  implementation("dev.langchain4j:langchain4j-google-ai-gemini")
 }
 
 tasks.withType<Test> { useJUnitPlatform() }
