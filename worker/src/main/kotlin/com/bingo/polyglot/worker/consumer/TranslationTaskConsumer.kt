@@ -1,6 +1,7 @@
 package com.bingo.polyglot.worker.consumer
 
 import com.bingo.polyglot.core.constants.KafkaTopics
+import com.bingo.polyglot.core.constants.Language
 import com.bingo.polyglot.core.constants.TaskStatus
 import com.bingo.polyglot.core.dto.CreateTaskMessage
 import com.bingo.polyglot.core.entity.*
@@ -48,7 +49,7 @@ class TranslationTaskConsumer(
   fun listenCreateTask(message: CreateTaskMessage) {
     val taskId = message.taskId
     val logPrefix = "[TranslationTask:$taskId]"
-    // 1. Check current node's memory load before processing.
+    // Check current node's memory load before processing.
     val ratio = memoryUsageRatio()
     if (ratio > 0.9) {
       logger.warn(
@@ -59,7 +60,8 @@ class TranslationTaskConsumer(
       return
     }
     logger.info("$logPrefix Received translation task create message")
-    // 2. Load task details from the database
+
+    // Load task details from the database
     val task =
       sql.findById(TRANSLATE_TASK, taskId)
         ?: throw TaskException.taskNotFound(message = "Task $taskId not found", taskId = taskId)
@@ -71,131 +73,241 @@ class TranslationTaskConsumer(
     try {
       val duration = measureTime {
         checkCanceled(taskId)
-        sql.executeUpdate(TranslationTask::class) {
-          set(table.status, TaskStatus.RUNNING)
-          where(table.id eq taskId)
-        }
+        updateTaskToRunning(taskId)
         logger.info("$logPrefix Change translation task status to RUNNING")
         val result = mutableMapOf<String, MutableMap<String, MutableMap<String, String>>>()
         for ((i, audio) in task.audios.withIndex()) {
           checkCanceled(taskId)
           val logPrefix =
             "[TranslationTask:$taskId, Audio(${i + 1}/${task.audios.size}):${audio.id}]"
-          // 3. Call Whisper service for speech recognition
+
+          // Call Whisper service for speech recognition
           logger.info("$logPrefix Start calling Whisper service")
-          val sttText =
-            minioStorage.getObject(audio.path).use { response ->
-              val builder = MultipartBodyBuilder()
-              builder
-                .part("audio_file", InputStreamResource(response))
-                .filename(audio.name)
-                .contentType(MediaType.valueOf(audio.contentType))
-              whisperApi
-                .post()
-                .uri("/asr")
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
-                .retrieve()
-                .body(String::class.java)
-            }
-          logger.info("$logPrefix Finished calling Whisper service")
-          sql.executeUpdate(Audio::class) {
-            set(table.sttText, sttText)
-            where(table.id eq audio.id)
-          }
-          logger.info("$logPrefix Saved STT text")
+          val sttText = generateSttByWhisperAndSave(audio)
+          logger.info("$logPrefix Finished calling Whisper service and save STT text")
 
           val originalText = audio.originalText
           if (originalText != null && sttText != null) {
             checkCanceled(taskId)
-            // 4. Perform accuracy validation (WER)
+            // Perform accuracy validation (WER)
             logger.info("$logPrefix Start calculating WER")
-            val wer = WerUtil.calculate(originalText, sttText)
-            sql.executeUpdate(Audio::class) {
-              set(table.wer, wer)
-              where(table.id eq audio.id)
-            }
+            val wer = calculateWerAndSave(originalText, sttText, audio.id)
             logger.info("$logPrefix Saved WER = $wer")
 
             checkCanceled(taskId)
-            // 5. Call translation API for multilingual translation
+            // Call translation API for multilingual translation
             logger.info("$logPrefix Start calling translation service")
-            val originalTranslations = translator.translate(originalText, task.targetLanguage)
-            val sttTranslations = translator.translate(sttText, task.targetLanguage)
-            logger.info("$logPrefix Finished calling translation service")
-            // Set all results
-            for (t in originalTranslations) {
-              val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
-              val typeMap = textIdMap.getOrPut(audio.id.toString()) { mutableMapOf() }
-              typeMap["TEXT"] = t.text
-            }
-
-            for (t in sttTranslations) {
-              val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
-              val typeMap = textIdMap.getOrPut(audio.id.toString()) { mutableMapOf() }
-              typeMap["AUDIO"] = t.text
-            }
+            translateAndSetResult(originalText, task.targetLanguage, sttText, result, audio.id)
+            logger.info("$logPrefix Finished calling translation service and set all result")
           }
-          sql.executeUpdate(TranslationTask::class) {
-            set(table.progress, (i + 1).toDouble() / task.audios.size)
-            where(table.id eq taskId)
-          }
+          // Update processing progress
+          updateProgress(i + 1, task.audios.size, taskId)
         }
 
-        // 7: Pack translation result into a single file and upload
+        // Pack translation result into a single file and upload
         logger.info("$logPrefix Packing and uploading translation results")
-        val byteArray =
-          ByteArrayOutputStream().use { bos ->
-            GZIPOutputStream(bos).use { gzipOut ->
-              gzipOut.write(objectMapper.writeValueAsBytes(result))
-            }
-            bos.toByteArray()
-          }
-        val path = "translation/${taskId}.pack"
-        minioStorage.putObject(
-          byteArray.inputStream(),
-          path,
-          byteArray.size.toLong(),
-          "application/gzip",
-        )
-        sql.executeUpdate(TranslationTask::class) {
-          set(table.resultPath, path)
-          where(table.id eq taskId)
-        }
+        val path = packResultAndUpload(result, taskId)
         logger.info("$logPrefix Uploaded translation results to MinIO $path")
 
-        // 8. Update task status to SUCCEEDED
-        sql.executeUpdate(TranslationTask::class) {
-          set(table.status, TaskStatus.SUCCEEDED)
-          set(table.errorMessage, null)
-          set(table.finishTime, OffsetDateTime.now())
-          where(table.id eq taskId)
-        }
+        // Update task status to SUCCEEDED
+        updateTaskToSucceeded(taskId)
       }
       logger.info("$logPrefix Task processed successfully, cost $duration")
     } catch (ex: TaskException.Canceled) {
       logger.error(ex.message, ex)
     } catch (ex: Exception) {
       logger.error("$logPrefix Failed to process task", ex)
-      sql.executeUpdate(TranslationTask::class) {
-        set(table.status, TaskStatus.FAILED)
-        set(table.errorMessage, ex.message)
-        where(table.id eq taskId)
-      }
-      if (task.retryCount < 3) {
-        logger.info(
-          "$logPrefix Retrying task, current retry count: ${task.retryCount}, max retries: 3"
-        )
-        sql.executeUpdate(TranslationTask::class) {
-          set(table.status, TaskStatus.RETRY_SCHEDULED)
-          set(table.retryCount, table.retryCount + 1)
-          where(table.id eq taskId)
-        }
-        sendMqMessage(taskId)
-      } else {
-        logger.warn("$logPrefix Retry skipped: max retry reached")
-      }
+      updateTaskToFailed(ex, taskId)
+      retryTask(task, logPrefix)
     }
+  }
+
+  /**
+   * Update the translation task status to RUNNING in the database.
+   *
+   * @param taskId The ID of the translation task to update.
+   */
+  private fun updateTaskToRunning(taskId: Long) {
+    sql.executeUpdate(TranslationTask::class) {
+      set(table.status, TaskStatus.RUNNING)
+      where(table.id eq taskId)
+    }
+  }
+
+  /**
+   * Update the translation task progress in the database.
+   *
+   * @param finished The number of finished audios.
+   * @param total The total number of audios in the task.
+   * @param taskId The ID of the translation task to update.
+   */
+  private fun updateProgress(finished: Int, total: Int, taskId: Long) {
+    sql.executeUpdate(TranslationTask::class) {
+      set(table.progress, finished.toDouble() / total)
+      where(table.id eq taskId)
+    }
+  }
+
+  /**
+   * Update the translation task status to FAILED and set the error message.
+   *
+   * @param ex The exception that caused the failure.
+   * @param taskId The ID of the translation task to update.
+   */
+  private fun updateTaskToFailed(ex: Exception, taskId: Long) {
+    sql.executeUpdate(TranslationTask::class) {
+      set(table.status, TaskStatus.FAILED)
+      set(table.errorMessage, ex.message)
+      where(table.id eq taskId)
+    }
+  }
+
+  /**
+   * Update the translation task status to SUCCEEDED and clear any error messages.
+   *
+   * @param taskId The ID of the translation task to update.
+   */
+  private fun updateTaskToSucceeded(taskId: Long) {
+    sql.executeUpdate(TranslationTask::class) {
+      set(table.status, TaskStatus.SUCCEEDED)
+      set(table.errorMessage, null)
+      set(table.finishTime, OffsetDateTime.now())
+      where(table.id eq taskId)
+    }
+  }
+
+  /**
+   * Retry the translation task if it has not reached the maximum retry limit.
+   *
+   * @param task The translation task to retry.
+   * @param logPrefix The log prefix for logging messages.
+   */
+  private fun retryTask(task: TranslationTask, logPrefix: String) {
+    if (task.retryCount < 3) {
+      logger.info(
+        "$logPrefix Retrying task, current retry count: ${task.retryCount}, max retries: 3"
+      )
+      sql.executeUpdate(TranslationTask::class) {
+        set(table.status, TaskStatus.RETRY_SCHEDULED)
+        set(table.retryCount, table.retryCount + 1)
+        where(table.id eq task.id)
+      }
+      sendMqMessage(task.id)
+    } else {
+      logger.warn("$logPrefix Retry skipped: max retry reached")
+    }
+  }
+
+  /**
+   * Pack the translation results into a GZIP compressed file and upload it to MinIO.
+   *
+   * @param result The translation results to be packed.
+   * @param taskId The ID of the translation task for which results are being packed.
+   * @return The path where the packed result is stored in MinIO.
+   */
+  private fun packResultAndUpload(
+    result: MutableMap<String, MutableMap<String, MutableMap<String, String>>>,
+    taskId: Long,
+  ): String {
+    val byteArray =
+      ByteArrayOutputStream().use { bos ->
+        GZIPOutputStream(bos).use { gzipOut ->
+          gzipOut.write(objectMapper.writeValueAsBytes(result))
+        }
+        bos.toByteArray()
+      }
+    val path = "translation/${taskId}.pack"
+    minioStorage.putObject(
+      byteArray.inputStream(),
+      path,
+      byteArray.size.toLong(),
+      "application/gzip",
+    )
+    sql.executeUpdate(TranslationTask::class) {
+      set(table.resultPath, path)
+      where(table.id eq taskId)
+    }
+    return path
+  }
+
+  /**
+   * Translate the original text and STT text into target languages, and set the results in the
+   * provided result map.
+   *
+   * @param originalText The original text from the audio.
+   * @param targetLanguage The list of target languages to translate into.
+   * @param sttText The STT text generated from the audio.
+   * @param result The mutable map to store translation results.
+   * @param audioId The ID of the audio entity for which translations are being processed.
+   */
+  private fun translateAndSetResult(
+    originalText: String,
+    targetLanguage: List<Language>,
+    sttText: String,
+    result: MutableMap<String, MutableMap<String, MutableMap<String, String>>>,
+    audioId: Long,
+  ) {
+    val originalTranslations = translator.translate(originalText, targetLanguage)
+    val sttTranslations = translator.translate(sttText, targetLanguage)
+    // Set all results
+    for (t in originalTranslations) {
+      val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
+      val typeMap = textIdMap.getOrPut(audioId.toString()) { mutableMapOf() }
+      typeMap["TEXT"] = t.text
+    }
+
+    for (t in sttTranslations) {
+      val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
+      val typeMap = textIdMap.getOrPut(audioId.toString()) { mutableMapOf() }
+      typeMap["AUDIO"] = t.text
+    }
+  }
+
+  /**
+   * Calculate Word Error Rate (WER) between original text and STT text, and save the result to the
+   * database.
+   *
+   * @param originalText The original text from the audio.
+   * @param sttText The STT text generated from the audio.
+   * @param audioId The ID of the audio entity to update with the WER result.
+   * @return The calculated WER value.
+   */
+  private fun calculateWerAndSave(originalText: String, sttText: String, audioId: Long): Double {
+    val wer = WerUtil.calculate(originalText, sttText)
+    sql.executeUpdate(Audio::class) {
+      set(table.wer, wer)
+      where(table.id eq audioId)
+    }
+    return wer
+  }
+
+  /**
+   * Call Whisper service to generate STT text from audio file and save it to the database.
+   *
+   * @param audio The audio entity containing the file path and metadata.
+   * @return The generated STT text, or null if the audio don't have text.
+   */
+  private fun generateSttByWhisperAndSave(audio: Audio): String? {
+    val sttText =
+      minioStorage.getObject(audio.path).use { response ->
+        val builder = MultipartBodyBuilder()
+        builder
+          .part("audio_file", InputStreamResource(response))
+          .filename(audio.name)
+          .contentType(MediaType.valueOf(audio.contentType))
+        whisperApi
+          .post()
+          .uri("/asr")
+          .contentType(MediaType.MULTIPART_FORM_DATA)
+          .body(builder.build())
+          .retrieve()
+          .body(String::class.java)
+      }
+    sql.executeUpdate(Audio::class) {
+      set(table.sttText, sttText)
+      where(table.id eq audio.id)
+    }
+    return sttText
   }
 
   @Scheduled(fixedDelay = 30_000)
