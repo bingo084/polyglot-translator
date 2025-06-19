@@ -90,6 +90,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      WHISPER_BASE_URL: http://whisper:9000
     depends_on:
       - db
       - broker
