@@ -111,7 +111,10 @@ class TranslationTaskService(
 
   /** Upload audio file */
   @PostMapping("upload-audio")
-  fun uploadAudio(@RequestParam file: MultipartFile): Long {
+  fun uploadAudio(
+    @RequestParam file: MultipartFile,
+    @RequestParam(required = false) originalText: String?,
+  ): Long {
     val extension = file.originalFilename?.substringAfterLast(".") ?: ""
     val path = "audio/${UUID.randomUUID()}.$extension"
     val contentType = file.contentType ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
@@ -128,6 +131,7 @@ class TranslationTaskService(
             size = file.size
             this.extension = extension
             this.contentType = contentType
+            this.originalText = originalText
           }
         ) {
           setMode(SaveMode.INSERT_ONLY)
@@ -143,7 +147,8 @@ class TranslationTaskService(
     private val TRANSLATE_TASK =
       newFetcher(TranslationTask::class).by {
         allScalarFields()
-        sourceAudio {
+        resultUrl()
+        audios {
           allScalarFields()
           url()
         }

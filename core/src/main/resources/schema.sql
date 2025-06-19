@@ -1,32 +1,37 @@
 CREATE TABLE translation_task
 (
-    id                   BIGINT PRIMARY KEY,
-    status               TEXT        NOT NULL,
-    source_audio_id      BIGINT      NOT NULL REFERENCES audio (id),
-    original_text        TEXT,
-    stt_text             TEXT,
-    wer                  DOUBLE PRECISION,
-    target_language      jsonb       NOT NULL,
-    original_translation jsonb       NOT NULL DEFAULT '[]',
-    stt_translation      jsonb       NOT NULL DEFAULT '[]',
-    result_file          BIGINT,
-    error_message        TEXT,
-    retry_count          INT         NOT NULL DEFAULT 0,
-    create_time          timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time          timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    finish_time          timestamptz
+    id              BIGINT PRIMARY KEY,
+    status          TEXT             NOT NULL,
+    target_language jsonb            NOT NULL,
+    result_path     TEXT,
+    progress        DOUBLE PRECISION NOT NULL DEFAULT 0,
+    error_message   TEXT,
+    retry_count     INT              NOT NULL DEFAULT 0,
+    create_time     timestamptz      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time     timestamptz      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finish_time     timestamptz
 );
-
-COMMENT ON COLUMN translation_task.wer IS 'Word Error Rate (WER) for the STT transcription.';
 
 CREATE TABLE audio
 (
-    id           BIGINT PRIMARY KEY,
-    name         TEXT        NOT NULL,
-    path         TEXT        NOT NULL UNIQUE,
-    size         BIGINT      NOT NULL,
-    extension    TEXT        NOT NULL,
-    content_type TEXT        NOT NULL,
-    create_time  timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    update_time  timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+    id            BIGINT PRIMARY KEY,
+    name          TEXT        NOT NULL,
+    path          TEXT        NOT NULL UNIQUE,
+    size          BIGINT      NOT NULL,
+    extension     TEXT        NOT NULL,
+    content_type  TEXT        NOT NULL,
+    original_text TEXT,
+    stt_text      TEXT,
+    wer           DOUBLE PRECISION,
+    create_time   timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    update_time   timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON COLUMN audio.wer IS 'Word Error Rate (WER) for the STT transcription.';
+
+CREATE TABLE translation_task_audio_mapping
+(
+    translation_task_id BIGINT NOT NULL REFERENCES translation_task (id),
+    audio_id            BIGINT NOT NULL REFERENCES audio (id),
+    PRIMARY KEY (translation_task_id, audio_id)
 );

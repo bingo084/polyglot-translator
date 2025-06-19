@@ -2,7 +2,7 @@ export com.bingo.polyglot.core.entity.TranslationTask
 
 specification TranslationTaskSpec {
   status
-  associatedIdEq(sourceAudio)
+  associatedIdIn(audios) as audioIds
   ge(createTime)
   le(createTime)
   ge(finishTime)
@@ -10,7 +10,6 @@ specification TranslationTaskSpec {
 }
 
 input TranslationTaskInput {
-  id(sourceAudio)
-  originalText
+  id(audios) as audioIds
   targetLanguage
 }

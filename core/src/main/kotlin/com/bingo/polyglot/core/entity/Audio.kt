@@ -26,4 +26,13 @@ interface Audio : BaseEntity {
 
   /** MIME content type, e.g., audio/mpeg */
   val contentType: String
+
+  /** Optional manually provided original text. */
+  val originalText: String?
+
+  /** Text obtained from speech-to-text transcription (STT). */
+  val sttText: String?
+
+  /** Word Error Rate (WER) for the STT transcription. */
+  val wer: Double?
 }

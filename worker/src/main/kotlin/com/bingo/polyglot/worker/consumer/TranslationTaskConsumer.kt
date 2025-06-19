@@ -72,55 +72,58 @@ class TranslationTaskConsumer(
           where(table.id eq taskId)
         }
         logger.info("$logPrefix Change translation task status to RUNNING")
-        checkCanceled(taskId)
-        // 3. Call Whisper service for speech recognition
-        logger.info("$logPrefix Start calling Whisper service")
-        val sttText =
-          minioStorage.getObject(task.sourceAudio.path).use { response ->
-            val builder = MultipartBodyBuilder()
-            builder
-              .part("audio_file", InputStreamResource(response))
-              .filename(task.sourceAudio.name)
-              .contentType(MediaType.valueOf(task.sourceAudio.contentType))
-            whisperApi
-              .post()
-              .uri("/asr")
-              .contentType(MediaType.MULTIPART_FORM_DATA)
-              .body(builder.build())
-              .retrieve()
-              .body(String::class.java)
-          }
-        logger.info("$logPrefix Finished calling Whisper service")
-        sql.executeUpdate(TranslationTask::class) {
-          set(table.sttText, sttText)
-          where(table.id eq taskId)
-        }
-        logger.info("$logPrefix Saved STT text")
-
-        val originalText = task.originalText
-        if (originalText != null && sttText != null) {
+        for ((i, audio) in task.audios.withIndex()) {
           checkCanceled(taskId)
-          // 4. Perform accuracy validation (WER)
-          logger.info("$logPrefix Start calculating WER")
-          val wer = WerUtil.calculate(originalText, sttText)
+          val logPrefix =
+            "[TranslationTask:$taskId, Audio(${i + 1}/${task.audios.size}):${audio.id}]"
+          // 3. Call Whisper service for speech recognition
+          logger.info("$logPrefix Start calling Whisper service")
+          val sttText =
+            minioStorage.getObject(audio.path).use { response ->
+              val builder = MultipartBodyBuilder()
+              builder
+                .part("audio_file", InputStreamResource(response))
+                .filename(audio.name)
+                .contentType(MediaType.valueOf(audio.contentType))
+              whisperApi
+                .post()
+                .uri("/asr")
+                .contentType(MediaType.MULTIPART_FORM_DATA)
+                .body(builder.build())
+                .retrieve()
+                .body(String::class.java)
+            }
+          logger.info("$logPrefix Finished calling Whisper service")
+          sql.executeUpdate(Audio::class) {
+            set(table.sttText, sttText)
+            where(table.id eq audio.id)
+          }
+          logger.info("$logPrefix Saved STT text")
+
+          val originalText = audio.originalText
+          if (originalText != null && sttText != null) {
+            checkCanceled(taskId)
+            // 4. Perform accuracy validation (WER)
+            logger.info("$logPrefix Start calculating WER")
+            val wer = WerUtil.calculate(originalText, sttText)
+            sql.executeUpdate(Audio::class) {
+              set(table.wer, wer)
+              where(table.id eq audio.id)
+            }
+            logger.info("$logPrefix Saved WER = $wer")
+
+            checkCanceled(taskId)
+            // 5. Call translation API for multilingual translation
+            logger.info("$logPrefix Start calling translation service")
+            val originalTranslations = translator.translate(originalText, task.targetLanguage)
+            val sttTranslations = translator.translate(sttText, task.targetLanguage)
+            logger.info("$logPrefix Finished calling translation service")
+            // TODO: Pack all results into a single file
+          }
           sql.executeUpdate(TranslationTask::class) {
-            set(table.wer, wer)
+            set(table.progress, (i + 1).toDouble() / task.audios.size)
             where(table.id eq taskId)
           }
-          logger.info("$logPrefix Saved WER = $wer")
-
-          checkCanceled(taskId)
-          // 5. Call translation API for multilingual translation
-          logger.info("$logPrefix Start calling translation service")
-          val originalTranslations = translator.translate(originalText, task.targetLanguage)
-          val sttTranslations = translator.translate(sttText, task.targetLanguage)
-          logger.info("$logPrefix Finished calling translation service")
-          sql.executeUpdate(TranslationTask::class) {
-            set(table.originalTranslations, originalTranslations)
-            set(table.sttTranslations, sttTranslations)
-            where(table.id eq taskId)
-          }
-          logger.info("$logPrefix Saved translations")
         }
 
         // 6. Update task status to SUCCEEDED
@@ -227,7 +230,7 @@ class TranslationTaskConsumer(
     private val TRANSLATE_TASK =
       newFetcher(TranslationTask::class).by {
         allScalarFields()
-        sourceAudio { allScalarFields() }
+        audios { allScalarFields() }
       }
   }
 }
