@@ -222,11 +222,12 @@ Once the system is running, you can access the API documentation at:
 
 ## 📁 Example Usage
 
-1. Upload audio file and corresponding original text
-2. Create a translation task via API
-3. Wait for the background worker to complete processing
-4. Download the packaged multilingual result
-5. Query translations by language and text ID via API
+1. Upload audio file and corresponding original text.
+2. Create a translation task via API.
+3. Wait for the background worker to complete processing.
+4. During processing, you can query the task status or cancel the task.
+5. After completion, the packaged multilingual translation file becomes available.
+6. Use the query API to retrieve translation content by language, audio ID, and text source.
 
 ---
 
