@@ -157,14 +157,22 @@ text or audio), enabling efficient access to translation data.
 
 ### Prerequisites
 
+- Git
 - Java 21+
 - Kotlin 2.1+
 - Docker、Docker Compose、Docker BuilderX
 - Gemini API Key
 
+### 📥️ Clone the Project
+
+```bash
+git clone https://github.com/bingo084/polyglot-translator.git
+```
+
 ### Build the Project
 
 ```bash
+cd polyglot-translator
 ./gradlew clean build -x test
 ````
 
