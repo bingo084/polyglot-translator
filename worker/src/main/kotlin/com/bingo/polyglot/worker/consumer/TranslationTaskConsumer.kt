@@ -10,6 +10,7 @@ import com.bingo.polyglot.worker.config.Translator
 import com.bingo.polyglot.worker.util.WerUtil
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
+import org.babyfish.jimmer.sql.kt.ast.expression.plus
 import org.babyfish.jimmer.sql.kt.fetcher.newFetcher
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -17,6 +18,7 @@ import org.springframework.core.io.InputStreamResource
 import org.springframework.http.MediaType
 import org.springframework.http.client.MultipartBodyBuilder
 import org.springframework.kafka.annotation.KafkaListener
+import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import java.time.OffsetDateTime
@@ -28,6 +30,7 @@ class TranslationTaskConsumer(
   private val minioStorage: MinioStorage,
   private val whisperApi: RestClient,
   private val translator: Translator,
+  private val kafka: KafkaTemplate<String, CreateTaskMessage>,
 ) {
 
   @KafkaListener(topics = [KafkaTopics.TRANSLATION_TASK_CREATE])
@@ -36,24 +39,23 @@ class TranslationTaskConsumer(
     val taskId = message.taskId
     val logPrefix = "[TranslationTask:$taskId]"
     logger.info("$logPrefix Received translation task create message")
+    // 1. Load task details from the database
+    val task =
+      sql.findById(TRANSLATE_TASK, taskId)
+        ?: throw TaskException.taskNotFound(message = "Task $taskId not found", taskId = taskId)
+    if (task.status !in listOf(TaskStatus.PENDING, TaskStatus.RETRY_SCHEDULED)) {
+      logger.warn("$logPrefix Skip processing task because status is ${task.status}")
+      return
+    }
 
     try {
       val duration = measureTime {
-        // 1. Load task details from the database
-        val task =
-          sql.findById(TRANSLATE_TASK, taskId)
-            ?: throw TaskException.taskNotFound(message = "Task $taskId not found", taskId = taskId)
-        if (task.status != TaskStatus.PENDING) {
-          logger.warn("$logPrefix Skip processing task because status is ${task.status}")
-          return
-        }
         checkCanceled(taskId)
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.RUNNING)
           where(table.id eq taskId)
         }
         logger.info("$logPrefix Change translation task status to RUNNING")
-
         checkCanceled(taskId)
         // 2. Call Whisper service for speech recognition
         logger.info("$logPrefix Start calling Whisper service")
@@ -108,6 +110,7 @@ class TranslationTaskConsumer(
         // 5. Update task status to SUCCEEDED
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.SUCCEEDED)
+          set(table.errorMessage, null)
           set(table.finishTime, OffsetDateTime.now())
           where(table.id eq taskId)
         }
@@ -121,6 +124,19 @@ class TranslationTaskConsumer(
         set(table.status, TaskStatus.FAILED)
         set(table.errorMessage, ex.message)
         where(table.id eq taskId)
+      }
+      if (task.retryCount < 3) {
+        logger.info(
+          "$logPrefix Retrying task, current retry count: ${task.retryCount}, max retries: 3"
+        )
+        sql.executeUpdate(TranslationTask::class) {
+          set(table.status, TaskStatus.RETRY_SCHEDULED)
+          set(table.retryCount, table.retryCount + 1)
+          where(table.id eq taskId)
+        }
+        sendMqMessage(taskId)
+      } else {
+        logger.warn("$logPrefix Retry skipped: max retry reached")
       }
     }
   }
@@ -137,6 +153,23 @@ class TranslationTaskConsumer(
       throw TaskException.canceled(
         "[TranslationTask:$taskId] Task is canceled, terminating processing"
       )
+    }
+  }
+
+  private fun sendMqMessage(taskId: Long) {
+    kafka.send(KafkaTopics.TRANSLATION_TASK_CREATE, CreateTaskMessage(taskId)).whenComplete {
+      result,
+      ex ->
+      if (ex != null) {
+        logger.error("[TranslationTask:$taskId] Retrying task failed", ex)
+        sql.executeUpdate(TranslationTask::class) {
+          set(table.status, TaskStatus.FAILED)
+          set(table.errorMessage, ex.message)
+          where(table.id eq taskId)
+        }
+      } else {
+        logger.info("[TranslationTask:$taskId] Retrying task message send successfully")
+      }
     }
   }
 

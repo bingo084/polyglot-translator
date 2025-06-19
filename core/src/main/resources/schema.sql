@@ -11,6 +11,7 @@ CREATE TABLE translation_task
     stt_translation      jsonb       NOT NULL DEFAULT '[]',
     result_file          BIGINT,
     error_message        TEXT,
+    retry_count          INT         NOT NULL DEFAULT 0,
     create_time          timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     update_time          timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
     finish_time          timestamptz

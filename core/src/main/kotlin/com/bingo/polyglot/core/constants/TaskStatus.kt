@@ -20,6 +20,9 @@ enum class TaskStatus {
   /** The task has finished execution but ended with an error. */
   FAILED,
 
+  /** The task is waiting for retry after a failure. */
+  RETRY_SCHEDULED,
+
   /** The task has successfully completed. */
   SUCCEEDED,
 }

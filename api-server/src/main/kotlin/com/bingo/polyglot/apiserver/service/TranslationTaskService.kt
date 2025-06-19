@@ -70,16 +70,17 @@ class TranslationTaskService(
       ex ->
       if (ex != null) {
         logger.error(
-          "Failed to send task create message for taskId=$taskId. Marking task as FAILED.",
+          "[TranslationTask:$taskId] Failed to send task create message. Marking task as FAILED.",
           ex,
         )
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.FAILED)
+          set(table.errorMessage, ex.message)
           where(table.id eq taskId)
         }
       } else {
         logger.info(
-          "Successfully sent task create message for taskId=$taskId, topic=${result.recordMetadata.topic()}, partition=${result.recordMetadata.partition()}, offset=${result.recordMetadata.offset()}"
+          "[TranslationTask:$taskId] Successfully sent task create message, topic=${result.recordMetadata.topic()}, partition=${result.recordMetadata.partition()}, offset=${result.recordMetadata.offset()}"
         )
       }
     }

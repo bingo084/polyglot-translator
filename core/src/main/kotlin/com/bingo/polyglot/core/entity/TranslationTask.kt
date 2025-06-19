@@ -48,6 +48,9 @@ interface TranslationTask : BaseEntity {
   /** Error message if the task failed or encountered issues. */
   val errorMessage: String?
 
+  /** Number of times the task has been retried. */
+  val retryCount: Int
+
   /** Timestamp indicating when the task was completed. */
   val finishTime: OffsetDateTime?
 }
