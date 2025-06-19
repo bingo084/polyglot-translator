@@ -63,7 +63,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/polyglot
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      KAFKA_BOOTSTRAP_SERVERS: broker:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker:9092
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
@@ -86,7 +86,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/polyglot
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      KAFKA_BOOTSTRAP_SERVERS: broker:9092
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: broker:9092
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
