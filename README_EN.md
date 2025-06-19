@@ -49,8 +49,8 @@ polyglot-translator/
 
 ### 📦 Encoding & Packaging
 
-- [ ] Compress all translation results into a compact file
-- [ ] Fast lookup by language, text ID, and content source
+- [x] Compress all translation results into a compact file
+- [x] Fast lookup by language, text ID, and content source
 
 ### 🧩 Background Task Scheduling
 

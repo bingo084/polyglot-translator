@@ -1,6 +1,8 @@
 package com.bingo.polyglot.apiserver.service
 
+import com.bingo.polyglot.apiserver.constants.SourceType
 import com.bingo.polyglot.core.constants.KafkaTopics
+import com.bingo.polyglot.core.constants.Language
 import com.bingo.polyglot.core.constants.TaskStatus
 import com.bingo.polyglot.core.dto.CreateTaskMessage
 import com.bingo.polyglot.core.dto.PageReq
@@ -11,6 +13,8 @@ import com.bingo.polyglot.core.entity.dto.TranslationTaskInput
 import com.bingo.polyglot.core.entity.dto.TranslationTaskSpec
 import com.bingo.polyglot.core.exception.TaskException
 import com.bingo.polyglot.core.storage.MinioStorage
+import com.fasterxml.jackson.core.type.TypeReference
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.babyfish.jimmer.Page
 import org.babyfish.jimmer.sql.ast.mutation.SaveMode
 import org.babyfish.jimmer.sql.kt.KSqlClient
@@ -23,6 +27,7 @@ import org.springframework.kafka.core.KafkaTemplate
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
 import java.util.*
+import java.util.zip.GZIPInputStream
 
 /**
  * Translation task
@@ -35,10 +40,47 @@ class TranslationTaskService(
   private val sql: KSqlClient,
   private val kafka: KafkaTemplate<String, CreateTaskMessage>,
   private val storage: MinioStorage,
+  private val objectMapper: ObjectMapper,
 ) {
   /** Find task */
   @GetMapping("{id}")
   fun findById(@PathVariable("id") id: Long): TranslationTask? = sql.findById(TRANSLATE_TASK, id)
+
+  /**
+   * Get task result
+   *
+   * @param id Task ID
+   * @param language Language of the result
+   * @param audioId Audio ID
+   * @param sourceType Source type of the task
+   */
+  @GetMapping("{id}/result")
+  fun findResult(
+    @PathVariable("id") id: Long,
+    @RequestParam language: Language,
+    @RequestParam audioId: Long,
+    @RequestParam sourceType: SourceType,
+  ): String? {
+    val resultPath =
+      sql
+        .createQuery(TranslationTask::class) {
+          where(table.id eq id)
+          select(table.resultPath)
+        }
+        .fetchOneOrNull()
+        ?: throw TaskException.taskNotFound(
+          message = "TaskResult with id $id not found",
+          taskId = id,
+        )
+    val uncompressed =
+      GZIPInputStream(storage.getObject(resultPath).buffered()).use {
+        it.readBytes().toString(Charsets.UTF_8)
+      }
+    val typeRef = object : TypeReference<Map<String, Map<String, Map<String, String>>>>() {}
+    val result: Map<String, Map<String, Map<String, String>>> =
+      objectMapper.readValue(uncompressed, typeRef)
+    return result[language.name]?.get(audioId.toString())?.get(sourceType.name)
+  }
 
   /** Find task */
   @GetMapping
