@@ -9,6 +9,7 @@ import com.bingo.polyglot.core.storage.MinioStorage
 import com.bingo.polyglot.worker.config.Translator
 import com.bingo.polyglot.worker.util.KafkaControl
 import com.bingo.polyglot.worker.util.WerUtil
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.babyfish.jimmer.sql.kt.KSqlClient
 import org.babyfish.jimmer.sql.kt.ast.expression.eq
 import org.babyfish.jimmer.sql.kt.ast.expression.plus
@@ -24,7 +25,9 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import oshi.SystemInfo
+import java.io.ByteArrayOutputStream
 import java.time.OffsetDateTime
+import java.util.zip.GZIPOutputStream
 import kotlin.time.measureTime
 
 @Component
@@ -35,6 +38,7 @@ class TranslationTaskConsumer(
   private val translator: Translator,
   private val kafka: KafkaTemplate<String, CreateTaskMessage>,
   private val kafkaControl: KafkaControl,
+  private val objectMapper: ObjectMapper,
 ) {
 
   @KafkaListener(
@@ -72,6 +76,7 @@ class TranslationTaskConsumer(
           where(table.id eq taskId)
         }
         logger.info("$logPrefix Change translation task status to RUNNING")
+        val result = mutableMapOf<String, MutableMap<String, MutableMap<String, String>>>()
         for ((i, audio) in task.audios.withIndex()) {
           checkCanceled(taskId)
           val logPrefix =
@@ -118,7 +123,18 @@ class TranslationTaskConsumer(
             val originalTranslations = translator.translate(originalText, task.targetLanguage)
             val sttTranslations = translator.translate(sttText, task.targetLanguage)
             logger.info("$logPrefix Finished calling translation service")
-            // TODO: Pack all results into a single file
+            // Set all results
+            for (t in originalTranslations) {
+              val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
+              val typeMap = textIdMap.getOrPut(audio.id.toString()) { mutableMapOf() }
+              typeMap["TEXT"] = t.text
+            }
+
+            for (t in sttTranslations) {
+              val textIdMap = result.getOrPut(t.language.name) { mutableMapOf() }
+              val typeMap = textIdMap.getOrPut(audio.id.toString()) { mutableMapOf() }
+              typeMap["AUDIO"] = t.text
+            }
           }
           sql.executeUpdate(TranslationTask::class) {
             set(table.progress, (i + 1).toDouble() / task.audios.size)
@@ -126,7 +142,29 @@ class TranslationTaskConsumer(
           }
         }
 
-        // 6. Update task status to SUCCEEDED
+        // 7: Pack translation result into a single file and upload
+        logger.info("$logPrefix Packing and uploading translation results")
+        val byteArray =
+          ByteArrayOutputStream().use { bos ->
+            GZIPOutputStream(bos).use { gzipOut ->
+              gzipOut.write(objectMapper.writeValueAsBytes(result))
+            }
+            bos.toByteArray()
+          }
+        val path = "translation/${taskId}.pack"
+        minioStorage.putObject(
+          byteArray.inputStream(),
+          path,
+          byteArray.size.toLong(),
+          "application/gzip",
+        )
+        sql.executeUpdate(TranslationTask::class) {
+          set(table.resultPath, path)
+          where(table.id eq taskId)
+        }
+        logger.info("$logPrefix Uploaded translation results to MinIO $path")
+
+        // 8. Update task status to SUCCEEDED
         sql.executeUpdate(TranslationTask::class) {
           set(table.status, TaskStatus.SUCCEEDED)
           set(table.errorMessage, null)
